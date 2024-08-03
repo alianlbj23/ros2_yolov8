@@ -7,6 +7,7 @@ import cv2
 import os
 from yolo_msgs.msg import Detection  # 自定义的消息类型
 import numpy as np
+from ament_index_python.packages import get_package_share_directory
 
 class PokemonNode(Node):
 
@@ -14,10 +15,12 @@ class PokemonNode(Node):
         super().__init__("pokemon_yolo_node")
         self.get_logger().info("Pokemon Node is running")
         self.bridge = CvBridge()
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        self.model = YOLO(
-            "/workspaces/src/yolo_pkg/resource/best.pt"
-        )
+        package_share_directory = get_package_share_directory('yolo_pkg')
+        model_path = os.path.join(package_share_directory, 'resource', 'best.pt')
+        self.model = YOLO(model_path)
+        # self.model = YOLO(
+        #     "/home/user/workspace/yolo_test/src/yolo_pkg/resource/best.pt"
+        # )
 
         self.detection_publisher_ = self.create_publisher(Image, "yolo_detection_topic", 10)
         self.create_subscription(CompressedImage, "/out/compressed", self.image_callback, 10)
