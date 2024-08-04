@@ -8,6 +8,7 @@ import cv2
 from ultralytics import YOLO
 from ament_index_python.packages import get_package_share_directory
 import torch
+import numpy as np
 
 class PokemonNode(Node):
 
@@ -31,6 +32,15 @@ class PokemonNode(Node):
         self.detection_image_publisher_ = self.create_publisher(Image, "yolo_detection_image", 10)
         self.detection_publisher_ = self.create_publisher(Detection, "yolo_detection_topic", 10)
         self.create_subscription(Image, "/camera/color/image_raw", self.image_callback, 10)
+        self.create_subscription(Image, "/camera/depth/image_raw", self.depth_callback, 10)
+
+        self.depth_image = None
+        self.camera_info = {
+            'fx': 600.0,  # 焦距x
+            'fy': 600.0,  # 焦距y
+            'cx': 320.0,  # 光心x
+            'cy': 240.0   # 光心y
+        }
 
     def image_callback(self, msg):
         # 将图像消息转换为OpenCV格式
@@ -50,16 +60,24 @@ class PokemonNode(Node):
                     confidence = box.conf[0]  # 获取置信度
                     cls = box.cls[0]  # 获取类别
 
-                    self.get_logger().info(f"Detected object: Class={cls}, Confidence={confidence}, Box=[{x1}, {y1}, {x2}, {y2}]")
-
-                    detection_msg = Detection()
-                    detection_msg.class_name = str(cls)
-                    detection_msg.confidence = float(confidence)
-                    detection_msg.xmin = float(x1)
-                    detection_msg.ymin = float(y1)
-                    detection_msg.xmax = float(x2)
-                    detection_msg.ymax = float(y2)
-                    self.detection_publisher_.publish(detection_msg)
+                    if self.depth_image is not None:
+                        depth, point = self.get_point_and_depth_for_box(x1, y1, x2, y2)
+                        if depth is not None and point is not None:
+                            self.get_logger().info(f"Depth={depth:.2f} meters, Point={point}")
+                            detection_msg = Detection()
+                            detection_msg.class_name = str(cls)
+                            detection_msg.confidence = float(confidence)
+                            detection_msg.xmin = float(x1)
+                            detection_msg.ymin = float(y1)
+                            detection_msg.xmax = float(x2)
+                            detection_msg.ymax = float(y2)
+                            detection_msg.depth = float(depth)
+                            detection_msg.point_x = float(point[0])
+                            detection_msg.point_y = float(point[1])
+                            detection_msg.point_z = float(point[2])
+                            self.detection_publisher_.publish(detection_msg)
+                    else:
+                        self.get_logger().info(f"Depth image not available for detection")
 
         # 可视化识别结果
         annotated_frame = results[0].plot()
@@ -67,6 +85,32 @@ class PokemonNode(Node):
         # 发布识别结果图像
         msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
         self.detection_image_publisher_.publish(msg)
+
+    def depth_callback(self, msg):
+        # 将深度图像消息转换为OpenCV格式
+        self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+        # 假设深度图像的单位是毫米，将其转换为米
+        self.depth_image = self.depth_image.astype(np.float32) / 1000.0
+
+    def get_point_and_depth_for_box(self, x1, y1, x2, y2):
+        # 获取检测框中心点
+        center_x = int((x1 + x2) / 2)
+        center_y = int((y1 + y2) / 2)
+
+        # 获取深度值
+        if self.depth_image is not None and 0 <= center_x < self.depth_image.shape[1] and 0 <= center_y < self.depth_image.shape[0]:
+            depth = self.depth_image[center_y, center_x]
+            if depth > 0:
+                # 计算三维点
+                fx = self.camera_info['fx']
+                fy = self.camera_info['fy']
+                cx = self.camera_info['cx']
+                cy = self.camera_info['cy']
+                point_x = (center_x - cx) * depth / fx
+                point_y = (center_y - cy) * depth / fy
+                point_z = depth
+                return depth, (point_x, point_y, point_z)
+        return None, None
 
 def main():
     rclpy.init()
