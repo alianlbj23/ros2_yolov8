@@ -23,6 +23,7 @@ setup(
     entry_points={
         'console_scripts': [
             'yolo_pokemon_node = yolo_pkg.pokemon_node:main',
+            'compressed_node = yolo_pkg.compressed:main',
         ],
     },
 )
