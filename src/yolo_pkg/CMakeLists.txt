@@ -8,9 +8,9 @@ find_package(cv_bridge REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
 # 安装 Python 脚本
-install(PROGRAMS
-  scripts/yolo_pokemon_node.py
-  DESTINATION lib/${PROJECT_NAME}
+install(DIRECTORY resource/
+  DESTINATION share/${PROJECT_NAME}/resource
+  FILES_MATCHING PATTERN "*"
 )
 
 # 安装资源文件
