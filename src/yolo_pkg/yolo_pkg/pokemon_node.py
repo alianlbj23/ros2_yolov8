@@ -1,18 +1,20 @@
 import rclpy
 from rclpy.node import Node
 from cv_bridge import CvBridge
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CompressedImage, Imu
 from yolo_msgs.msg import Detection  # 自定义的消息类型
+from geometry_msgs.msg import Point  # 用于发布坐标
 import os
 import numpy as np
 import cv2
 from ultralytics import YOLO
 from ament_index_python.packages import get_package_share_directory
 import yaml
-from sensor_msgs.msg import Imu
 import tf_transformations
 import matplotlib.pyplot as plt
 from collections import deque
+import roslibpy
+
 class PokemonNode(Node):
 
     def __init__(self):
@@ -24,6 +26,11 @@ class PokemonNode(Node):
         package_share_directory = get_package_share_directory('yolo_pkg')
         model_path = os.path.join(package_share_directory, 'resource', 'best.pt')
         self.model = YOLO(model_path)
+
+        # ROSBridge client to connect to Jetson
+        self.rosbridge_client = roslibpy.Ros(host='192.168.0.207', port=9090)
+        self.rosbridge_client.run()
+        self.coordinate_topic = roslibpy.Topic(self.rosbridge_client, '/object_coordinates', 'geometry_msgs/Point')
 
         # 读取相机内参
         camera_calib_path = os.path.join(package_share_directory, 'resource', 'ost.yaml')
@@ -38,8 +45,11 @@ class PokemonNode(Node):
         # 创建发布者
         self.detection_image_publisher_ = self.create_publisher(Image, "yolo_detection_image", 10)
         self.detection_publisher_ = self.create_publisher(Detection, "yolo_detection_topic", 10)
+        self.coordinate_publisher_ = self.create_publisher(Point, "object_coordinates", 10)  # 新的坐标发布者
+
+        self.create_subscription(CompressedImage, "/camera/color/image_raw/compressed", self.image_callback, 10)
+        self.create_subscription(CompressedImage, "/camera/depth/image_raw/compressed", self.depth_callback, 10)
         self.create_subscription(Image, "/camera/color/image_raw", self.image_callback, 10)
-        self.create_subscription(Image, "/camera/depth/image_raw", self.depth_callback, 10)
         self.create_subscription(Imu, "/imu/data_raw", self.imu_callback, 10)
 
         self.depth_image = None
@@ -54,8 +64,7 @@ class PokemonNode(Node):
             orientation_q.w
         ])
         self.orientation_data.append(euler)
-        self.plot_orientation()
-
+        # self.plot_orientation()
 
     def plot_orientation(self):
         plt.clf()
@@ -66,7 +75,12 @@ class PokemonNode(Node):
         plt.pause(0.01)
 
     def image_callback(self, msg):
-        frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        if isinstance(msg, CompressedImage):
+            # 解压缩图像数据
+            np_arr = np.frombuffer(msg.data, np.uint8)
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        else:
+            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
         # 使用YOLO进行物体检测，显式指定使用GPU
         results = self.model.predict(source=frame, verbose=False, device='cuda')
@@ -86,6 +100,7 @@ class PokemonNode(Node):
                         # 计算物体在世界坐标系中的位置
                         point_world = np.dot(self.extrinsics_matrix, np.array([point_camera[0], point_camera[1], point_camera[2], 1.0]))
 
+                        # 发布检测消息
                         detection_msg = Detection()
                         detection_msg.class_name = str(cls)
                         detection_msg.confidence = float(confidence)
@@ -98,14 +113,32 @@ class PokemonNode(Node):
                         detection_msg.point_y = float(point_world[1])
                         detection_msg.point_z = float(point_world[2])
                         self.detection_publisher_.publish(detection_msg)
-                        print("position : ", detection_msg.point_x, detection_msg.point_y, detection_msg.point_z)
+
+                        # 发布坐标消息
+                        point_msg = Point()
+                        point_msg.x = float(point_world[0])
+                        point_msg.y = float(point_world[1])
+                        point_msg.z = float(point_world[2])
+                        self.coordinate_publisher_.publish(point_msg)
+                        roslibpy_point_msg = roslibpy.Message({
+                            'x': float(point_world[0]),
+                            'y': float(point_world[1]),
+                            'z': float(point_world[2])
+                        })
+                        self.coordinate_topic.publish(roslibpy_point_msg)
+                        # print("position : ", point_msg.x, point_msg.y, point_msg.z)
 
         annotated_frame = results[0].plot()
         msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
         self.detection_image_publisher_.publish(msg)
 
     def depth_callback(self, msg):
-        self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+        if isinstance(msg, CompressedImage):
+            # 解压缩图像数据
+            np_arr = np.frombuffer(msg.data, np.uint8)
+            self.depth_image = cv2.imdecode(np_arr, cv2.IMREAD_UNCHANGED)
+        else:
+            self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
 
     def get_depth_and_point_for_box(self, x1, y1, x2, y2):
         if self.depth_image is not None:
