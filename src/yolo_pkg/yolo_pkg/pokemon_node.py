@@ -49,7 +49,6 @@ class PokemonNode(Node):
 
         self.create_subscription(CompressedImage, "/camera/color/image_raw/compressed", self.image_callback, 10)
         self.create_subscription(CompressedImage, "/camera/depth/image_raw/compressed", self.depth_callback, 10)
-        self.create_subscription(Image, "/camera/color/image_raw", self.image_callback, 10)
         self.create_subscription(Imu, "/imu/data_raw", self.imu_callback, 10)
 
         self.depth_image = None
@@ -92,13 +91,15 @@ class PokemonNode(Node):
                     confidence = box.conf[0]
                     cls = box.cls[0]
                     depth, point = self.get_depth_and_point_for_box(x1, y1, x2, y2)
-
                     if depth is not None and point is not None:
                         # 使用内参矩阵将像素坐标转换为相机坐标
-                        point_camera = np.dot(np.linalg.inv(self.camera_matrix), np.array([point[0], point[1], 1.0])) * depth
+                        point_camera = np.dot(np.linalg.inv(self.camera_matrix), np.array([point[0], point[1], 1.0])) * (depth / 1000.0)  # 转换为米
 
                         # 计算物体在世界坐标系中的位置
                         point_world = np.dot(self.extrinsics_matrix, np.array([point_camera[0], point_camera[1], point_camera[2], 1.0]))
+
+                        # 将相机坐标转换为PyBullet坐标：PyBullet的x=相机的z，PyBullet的y=相机的x，PyBullet的z=相机的y
+                        point_bullet = np.array([point_world[2], -point_world[0], -point_world[1]])
 
                         # 发布检测消息
                         detection_msg = Detection()
@@ -109,21 +110,22 @@ class PokemonNode(Node):
                         detection_msg.xmax = float(x2)
                         detection_msg.ymax = float(y2)
                         detection_msg.depth = float(depth)
-                        detection_msg.point_x = float(point_world[0])
-                        detection_msg.point_y = float(point_world[1])
-                        detection_msg.point_z = float(point_world[2])
+                        detection_msg.point_x = float(point_bullet[0])
+                        detection_msg.point_y = float(point_bullet[1])
+                        detection_msg.point_z = float(point_bullet[2])
                         self.detection_publisher_.publish(detection_msg)
 
                         # 发布坐标消息
                         point_msg = Point()
-                        point_msg.x = float(point_world[0])
-                        point_msg.y = float(point_world[1])
-                        point_msg.z = float(point_world[2])
+                        point_msg.x = float(point_bullet[0])
+                        point_msg.y = float(point_bullet[1])
+                        point_msg.z = float(point_bullet[2])
+                        # print(point_msg.x, point_msg.y, point_msg.z)
                         self.coordinate_publisher_.publish(point_msg)
                         roslibpy_point_msg = roslibpy.Message({
-                            'x': float(point_world[0]),
-                            'y': float(point_world[1]),
-                            'z': float(point_world[2])
+                            'x': float(point_bullet[0]),
+                            'y': float(point_bullet[1]),
+                            'z': float(point_bullet[2])
                         })
                         self.coordinate_topic.publish(roslibpy_point_msg)
                         # print("position : ", point_msg.x, point_msg.y, point_msg.z)
@@ -131,6 +133,7 @@ class PokemonNode(Node):
         annotated_frame = results[0].plot()
         msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
         self.detection_image_publisher_.publish(msg)
+
 
     def depth_callback(self, msg):
         if isinstance(msg, CompressedImage):
