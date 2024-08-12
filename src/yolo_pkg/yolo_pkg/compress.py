@@ -30,7 +30,7 @@ class ImageCompressionNode(Node):
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
         # Compress the image using optimized JPEG settings
-        compressed_image = self.compress_image(cv_image, '.jpg', [cv2.IMWRITE_JPEG_QUALITY, 85])
+        compressed_image = self.compress_image(cv_image, '.jpg', [cv2.IMWRITE_JPEG_QUALITY, 70])
 
         # Create CompressedImage message
         compressed_msg = CompressedImage()
