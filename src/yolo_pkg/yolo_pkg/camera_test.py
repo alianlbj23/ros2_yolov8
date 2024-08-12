@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CompressedImage
 import cv2
 from cv_bridge import CvBridge
 import numpy as np
@@ -25,20 +25,21 @@ class DepthCenterTester(Node):
         self.bridge = CvBridge()
 
         # 订阅深度图像话题
-        self.create_subscription(Image, "/camera/depth/image_raw", self.depth_callback, 10)
+        self.create_subscription(CompressedImage, "/camera/depth/image_raw/compressed", self.depth_callback, 10)
 
     def depth_callback(self, msg):
-        # 将ROS图像消息转换为OpenCV图像
-        self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+        # 解压缩图像数据
+        np_arr = np.frombuffer(msg.data, np.uint8)
+        depth_image = cv2.imdecode(np_arr, cv2.IMREAD_UNCHANGED)
 
-        if self.depth_image is not None:
+        if depth_image is not None:
             # 获取图像中心点坐标
-            height, width = self.depth_image.shape
+            height, width = depth_image.shape
             center_x = width // 2
             center_y = height // 2
 
             # 获取中心点的深度值
-            depth_value = self.depth_image[center_y, center_x]
+            depth_value = depth_image[center_y, center_x]
 
             # 使用内参矩阵将中心点从像素坐标转换为相机坐标
             if depth_value > 0:  # 确保深度值有效

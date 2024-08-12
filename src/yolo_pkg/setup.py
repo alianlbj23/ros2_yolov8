@@ -24,6 +24,8 @@ setup(
         'console_scripts': [
             'yolo_pokemon_node = yolo_pkg.pokemon_node:main',
             'compressed_node = yolo_pkg.compress:main',
+            'imu_test_node = yolo_pkg.imu_test:main',
+            'camera_depth_test_node = yolo_pkg.camera_test:main'
         ],
     },
 )
