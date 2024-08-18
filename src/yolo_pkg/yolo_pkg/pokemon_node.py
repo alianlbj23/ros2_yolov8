@@ -24,12 +24,17 @@ class PokemonNode(Node):
         self.bridge = CvBridge()
         self.orientation_data = deque(maxlen=100)
 
+        self.declare_parameter('rosbridge_ip', '192.168.0.52')
+        self.declare_parameter('rosbridge_port', 9090)
+        rosbridge_ip = self.get_parameter('rosbridge_ip').get_parameter_value().string_value
+        rosbridge_port = self.get_parameter('rosbridge_port').get_parameter_value().integer_value
+
         package_share_directory = get_package_share_directory('yolo_pkg')
         model_path = os.path.join(package_share_directory, 'resource', 'best_large.pt')
         self.model = YOLO(model_path)
 
         # ROSBridge client to connect to Jetson
-        self.rosbridge_client = roslibpy.Ros(host='192.168.0.52', port=9090)
+        self.rosbridge_client = roslibpy.Ros(host=rosbridge_ip, port=rosbridge_port)
         self.rosbridge_client.run()
         self.coordinate_topic = roslibpy.Topic(self.rosbridge_client, '/object_coordinates', 'geometry_msgs/Point')
         self.direction_topic = roslibpy.Topic(self.rosbridge_client, '/object_direction', 'std_msgs/String')
