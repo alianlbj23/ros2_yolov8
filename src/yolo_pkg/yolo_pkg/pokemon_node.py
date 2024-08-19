@@ -30,7 +30,7 @@ class PokemonNode(Node):
         rosbridge_port = self.get_parameter('rosbridge_port').get_parameter_value().integer_value
 
         package_share_directory = get_package_share_directory('yolo_pkg')
-        model_path = os.path.join(package_share_directory, 'resource', 'best_large.pt')
+        model_path = os.path.join(package_share_directory, 'resource', 'best_nano.pt')
         self.model = YOLO(model_path)
 
         # ROSBridge client to connect to Jetson
@@ -93,7 +93,7 @@ class PokemonNode(Node):
         else:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
-        results = self.model.predict(source=frame, verbose=False, device='cuda')
+        results = self.model.predict(source=frame, conf=0.6,verbose=False, device='cuda', half = True)
 
         color_background = np.zeros_like(frame)
         found_target = False
