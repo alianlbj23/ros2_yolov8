@@ -30,7 +30,7 @@ class PokemonNode(Node):
         rosbridge_port = self.get_parameter('rosbridge_port').get_parameter_value().integer_value
 
         package_share_directory = get_package_share_directory('yolo_pkg')
-        model_path = os.path.join(package_share_directory, 'resource', 'best_nano.pt')
+        model_path = os.path.join(package_share_directory, 'resource', 'best_nano_auto_augu_super_close_fire.pt')
         self.model = YOLO(model_path)
 
         # ROSBridge client to connect to Jetson
