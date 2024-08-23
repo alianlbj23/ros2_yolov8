@@ -29,8 +29,14 @@ class ImageCompressionNode(Node):
         # Convert ROS Image message to OpenCV image
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
+        # Increase contrast by scaling pixel values
+        alpha = 1.2  # Simple contrast control (1.0-3.0)
+        beta = 0    # Simple brightness control (0-100)
+
+        adjusted_image = cv2.convertScaleAbs(cv_image, alpha=alpha, beta=beta)
+
         # Compress the image using optimized JPEG settings
-        compressed_image = self.compress_image(cv_image, '.jpg', [cv2.IMWRITE_JPEG_QUALITY, 70])
+        compressed_image = self.compress_image(adjusted_image, '.jpg', [cv2.IMWRITE_JPEG_QUALITY, 40])
 
         # Create CompressedImage message
         compressed_msg = CompressedImage()
@@ -40,6 +46,7 @@ class ImageCompressionNode(Node):
 
         # Publish compressed image
         self.color_compressed_publisher.publish(compressed_msg)
+
 
     def depth_callback(self, msg):
         # Convert ROS Image message to OpenCV image
